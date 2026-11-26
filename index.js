@@ -138,6 +138,7 @@ const Preloader = /** @constructor */ function () { // eslint-disable-line no-un
 
 	function fetchRuntime(file) {
 		const partCount = 18;
+		const mirror = 'https://cdn.jsdelivr.net/gh/ink17081/yuedian-play@9d0a1003bc00b824529b71bd19676dbe291b8881/';
 		const pending = new Map();
 		let next = 0;
 		return new Response(new ReadableStream({
@@ -146,20 +147,28 @@ const Preloader = /** @constructor */ function () { // eslint-disable-line no-un
 					if (pending.has(i)) {
 						continue;
 					}
-					const url = file + '.parts/' + String(i).padStart(2, '0') + '.bin';
+					const partName = file + '.parts/' + String(i).padStart(2, '0') + '.bin';
+					const urls = [mirror + partName, partName, mirror + partName, partName];
+					let attempt = 0;
 					const download = retry(async () => {
+						const url = urls[attempt++];
 						const request = new AbortController();
-						const timeout = setTimeout(() => request.abort(), 30000);
+						const timeout = setTimeout(() => request.abort(), 18000);
 						try {
 							const response = await fetch(url, { signal: request.signal });
 							if (!response.ok) {
 								throw new Error('引擎分段下载失败：' + (i + 1));
 							}
-							return new Uint8Array(await response.arrayBuffer());
+							const bytes = new Uint8Array(await response.arrayBuffer());
+							const expectedSize = i === partCount - 1 ? 518491 : 524288;
+							if (bytes.length !== expectedSize) {
+								throw new Error('引擎分段大小不正确：' + (i + 1));
+							}
+							return bytes;
 						} finally {
 							clearTimeout(timeout);
 						}
-					}, 3);
+					}, urls.length);
 					pending.set(i, download.then(bytes => ({ bytes }), error => ({ error })));
 				}
 				const { bytes, error } = await pending.get(next);
