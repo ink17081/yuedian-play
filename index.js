@@ -131,19 +131,57 @@ const Preloader = /** @constructor */ function () { // eslint-disable-line no-un
 			start: function (controller) {
 				onloadprogress(reader, controller).then(function () {
 					controller.close();
-				});
+			}, error => controller.error(error));
 			},
 		}), { headers: response.headers });
+	}
+
+	function fetchRuntime(file) {
+		const partCount = 18;
+		const pending = new Map();
+		let next = 0;
+		return new Response(new ReadableStream({
+			async pull(controller) {
+				for (let i = next; i < Math.min(next + 6, partCount); i += 1) {
+					if (pending.has(i)) {
+						continue;
+					}
+					const url = file + '.parts/' + String(i).padStart(2, '0') + '.bin';
+					const download = retry(async () => {
+						const request = new AbortController();
+						const timeout = setTimeout(() => request.abort(), 30000);
+						try {
+							const response = await fetch(url, { signal: request.signal });
+							if (!response.ok) {
+								throw new Error('引擎分段下载失败：' + (i + 1));
+							}
+							return new Uint8Array(await response.arrayBuffer());
+						} finally {
+							clearTimeout(timeout);
+						}
+					}, 3);
+					pending.set(i, download.then(bytes => ({ bytes }), error => ({ error })));
+				}
+				const { bytes, error } = await pending.get(next);
+				if (error) {
+					controller.error(error);
+					return;
+				}
+				controller.enqueue(bytes);
+				pending.delete(next);
+				next += 1;
+				if (next === partCount) {
+					controller.close();
+				}
+			},
+		}));
 	}
 
 	async function fetchAsset(file) {
 		if (!file.endsWith('.wasm')) {
 			return fetch(file);
 		}
-		const response = await fetch(file + '.gz');
-		if (!response.ok) {
-			return response;
-		}
+		const response = fetchRuntime(file);
 		const headers = { 'Content-Type': 'application/wasm' };
 		if (typeof DecompressionStream === 'function' && response.body) {
 			const stream = response.body.pipeThrough(new DecompressionStream('gzip'));
