@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>跃点</title>
+	<meta name="description" content="按住蓄力，松手跳向下一座平台。">
+	<meta property="og:title" content="跃点">
+	<meta property="og:description" content="按住蓄力，松手跳向下一座平台。">
+	<style>
+		html, body { margin: 0; background: #262e29; color: #30443a; overflow: hidden; }
+		#canvas { display: block; touch-action: none; outline: none; }
+		#status { position: fixed; inset: 0; display: grid; place-content: center; padding: 24px; background: #fbfbe6; font-family: system-ui, sans-serif; text-align: center; }
+		#status h1 { font-size: 2rem; margin: 0 0 12px; }
+		#status-message, #status-notice { max-width: 25rem; margin: 0 auto 12px; line-height: 1.5; }
+		#status-progress { width: min(70vw, 22rem); height: 8px; margin: 4px auto; accent-color: #407263; }
+		#retry { margin: 8px auto 0; padding: 10px 22px; border: 0; border-radius: 20px; background: #345e50; color: white; font: inherit; cursor: pointer; }
+	</style>
+</head>
+<body>
+	<canvas id="canvas" aria-label="跃点游戏"></canvas>
+	<main id="status">
+		<h1>跃点</h1>
+		<p id="status-message" role="status">正在加载游戏…</p>
+		<progress id="status-progress" aria-label="加载进度"></progress>
+		<p id="status-notice" role="alert" hidden></p>
+		<button id="retry" type="button" hidden>重新加载</button>
+		<noscript>请在浏览器中启用 JavaScript 后重新打开。</noscript>
+	</main>
+	<script src="index.js?v=2"></script>
+	<script>
+		const config = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":216048,"index.wasm":37685705},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+		const status = document.getElementById('status');
+		const message = document.getElementById('status-message');
+		const progress = document.getElementById('status-progress');
+		const notice = document.getElementById('status-notice');
+		const retry = document.getElementById('retry');
+		retry.addEventListener('click', () => window.location.reload());
+		const slow = window.setTimeout(() => {
+			message.textContent = '首次加载约需下载 9 MB，请稍候。';
+			retry.hidden = false;
+		}, 12000);
+
+		function showError(text, error) {
+			window.clearTimeout(slow);
+			console.error(error);
+			message.hidden = true;
+			progress.hidden = true;
+			notice.textContent = text;
+			notice.hidden = false;
+			retry.hidden = false;
+		}
+
+		if (typeof Engine === 'undefined') {
+			showError('加载失败，请检查网络后重试。', '游戏脚本未加载');
+		} else {
+			const missing = Engine.getMissingFeatures({ threads: false });
+			if (missing.length) {
+				const inApp = /MicroMessenger|QQ\//i.test(navigator.userAgent);
+				const hint = inApp ? '请从聊天菜单选择「在浏览器打开」。' : '请尝试用最新版 Safari 或 Chrome 打开。';
+				showError('此浏览器暂时无法运行游戏。' + hint, missing.join(', '));
+			} else {
+				const engine = new Engine(config);
+				engine.startGame({
+					onProgress(loaded, total) {
+						if (total > 0) {
+							progress.max = total;
+							progress.value = loaded;
+						}
+					}
+				}).then(() => {
+					window.clearTimeout(slow);
+					status.remove();
+				}).catch(error => {
+					showError('游戏加载失败，请重试。若仍然失败，请用手机自带的浏览器打开。', error);
+				});
+			}
+		}
+	</script>
+</body>
+</html>
